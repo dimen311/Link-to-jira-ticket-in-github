@@ -1,112 +1,97 @@
- class githubJiraTicket {
-   constructor(domain) {
-     this.domain = domain;
-     this.previousUrl = "";
-     this.observedElement = document;
-     this.targetElSelector = ".gh-header-show .gh-header-title .js-issue-title";
-     this.isDebug = true;
-     this.runObserver();
-   }
- 
-   runObserver() {
-     this.consoleLog("runObserver -> observer started");
- 
-     const observerElement = this.observedElement;
-     this.consoleLog("runObserver -> observerElement:", observerElement);
-     const observer = new MutationObserver((mutationsList, observer) => {
-       this.consoleLog("runObserver -> location", location.href);
-       this.consoleLog("runObserver -> previousUrl", this.previousUrl);
-       if (location.href !== this.previousUrl) {
-         this.previousUrl = location.href;
-         this.consoleLog("runObserver -> mutation changed");
-         observer.disconnect();
-         setTimeout(() => {
-           this.addLinkToJiraTicket();
-           this.runObserver();
-         }, 500);        
-       }
-     });
- 
-     const config = { subtree: true, childList: true };
-     observer.observe(observerElement, config);
-   }
- 
-   async addLinkToJiraTicket() {
-     this.consoleLog("addLinkToJiraTicket -> start");
- 
-     const found = await this.waitForElementToDisplay(
-       this.targetElSelector,
-       null,
-       100,
-       1000
-     );
-     if (!found) {
-       this.consoleLog("addLinkToJiraTicket -> element not found");
-       return;
-     } else {
-       this.consoleLog("addLinkToJiraTicket -> element found");
-     }
- 
-     const title = document.querySelector(this.targetElSelector);
-     const text = title.textContent;
-     const pattern = /[A-Za-z\d]+-\d+/;
-     const matches = text.match(pattern);
- 
-     if (matches && matches.length) {
-       const jiraId = matches[0];
-       const linkToJira = `${this.domain}${jiraId}`;
-       const a = document.createElement("a");
-       this.consoleLog(
-         "addLinkToJiraTicket ->  link to jira ticket:",
-         linkToJira
-       );
-       a.setAttribute("href", linkToJira);
-       a.setAttribute("target", "_blank");
-       a.textContent = text;
-       title.innerHTML = "";
-       this.consoleLog("a:", a);
-       title.appendChild(a);
-       this.consoleLog("addLinkToJiraTicket ->  element appended?");
-     } else {
-       this.consoleLog(
-         "addLinkToJiraTicket -> regular expresion not find oject"
-       );
-     }
-     this.consoleLog("addLinkToJiraTicket -> end");
-   }
- 
-   waitForElementToDisplay(selector, callback, checkFrequencyInMs, timeoutInMs) {
-     this.consoleLog("waitForElementToDisplay -> start");
-     return new Promise((resolve, reject) => {
-       var startTimeInMs = Date.now();
-       (function loopSearch() {
-      
-         if (document.querySelector(selector) != null) {
-           if (callback) callback();
-           resolve(true);
-         } else {
-           setTimeout(function () {
-             if (timeoutInMs && Date.now() - startTimeInMs > timeoutInMs) {
-               resolve(false);
-             } else {
-               loopSearch();
-             }
-           }, checkFrequencyInMs);
-         }
-       })();
-     });
-   }
- 
-   consoleLog() {
-     if (!this.isDebug) return;
-     console.log("debug: ", ...arguments);
-   }
- }
- 
- //**********
-  try {
-  new githubJiraTicket('https://***URL***.atlassian.net/browse/');
-  } 
- catch (error) {
-     console.log('error:', error);
-   }
+class GithubJiraTicket {
+  constructor(domain) {
+    this.domain = domain;
+    this.previousUrl = "";
+    this.targetElSelector = ".gh-header-show .gh-header-title .js-issue-title";
+    this.isDebug = true;
+    this.observer = null;
+    this.init();
+  }
+
+  init() {
+    this.startObserver();
+    this.addLinkToJiraTicket(); // Initial check
+  }
+
+  startObserver() {
+    this.debug("Starting observer");
+    
+    this.observer?.disconnect();
+    this.observer = new MutationObserver(this.handleMutation.bind(this));
+    
+    const config = { subtree: true, childList: true };
+    this.observer.observe(document, config);
+  }
+
+  handleMutation() {
+    if (location.href === this.previousUrl) return;
+    
+    this.debug(`URL changed from ${this.previousUrl} to ${location.href}`);
+    this.previousUrl = location.href;
+    
+    // Debounce multiple rapid changes
+    clearTimeout(this.timeout);
+    this.timeout = setTimeout(() => this.addLinkToJiraTicket(), 300);
+  }
+
+  async addLinkToJiraTicket() {
+    this.debug("Adding JIRA ticket link");
+
+    const titleElement = await this.waitForElement(this.targetElSelector);
+    if (!titleElement) {
+      this.debug("Title element not found");
+      return;
+    }
+
+    const text = titleElement.textContent;
+    const jiraId = this.extractJiraId(text);
+    
+    if (!jiraId) {
+      this.debug("No JIRA ID found in title");
+      return;
+    }
+
+    this.updateTitleWithLink(titleElement, text, jiraId);
+  }
+
+  extractJiraId(text) {
+    const pattern = /[A-Za-z\d]+-\d+/;
+    const [match] = text.match(pattern) || [];
+    return match;
+  }
+
+  updateTitleWithLink(titleElement, text, jiraId) {
+    const link = document.createElement("a");
+    link.href = `${this.domain}${jiraId}`;
+    link.target = "_blank";
+    link.textContent = text;
+    
+    titleElement.innerHTML = "";
+    titleElement.appendChild(link);
+    this.debug(`Link added: ${link.href}`);
+  }
+
+  async waitForElement(selector, timeout = 1000) {
+    const startTime = Date.now();
+    
+    while (Date.now() - startTime < timeout) {
+      const element = document.querySelector(selector);
+      if (element) return element;
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+    
+    return null;
+  }
+
+  debug(...args) {
+    if (this.isDebug) {
+      console.log("GithubJiraTicket:", ...args);
+    }
+  }
+}
+
+try {
+  new GithubJiraTicket('https://***URL***.atlassian.net/browse/');
+} catch (error) {
+  console.error('GithubJiraTicket Error:', error);
+}

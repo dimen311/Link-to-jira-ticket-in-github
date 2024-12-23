@@ -1,4 +1,4 @@
-# GitHub to JIRA Ticket Linker
+# Link to jira ticket in github pr
 
 Script that automatically converts JIRA ticket IDs in GitHub PR titles into clickable links.
 
